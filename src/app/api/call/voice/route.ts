@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import sgMail from '@sendgrid/mail';
 import { CallData, Language } from '@/types/call';
+import { processCallData } from '@/utils/callProcessor';
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -54,10 +55,11 @@ const languageMap: Record<string, Language> = {
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const digits = formData.get('Digits') as string;
+    const speechResult = formData.get('SpeechResult') as string;
+    const language = formData.get('language') as string;
     const response = new VoiceResponse();
 
-    if (!digits) {
+    if (!language) {
       // Initial call - ask for language selection
       const gather = response.gather({
         input: ['dtmf'],
@@ -68,25 +70,31 @@ export async function POST(request: Request) {
       gather.say(languagePrompts['en-GB'].welcome);
     } else {
       // Language selected - redirect to process with selected language
-      const selectedLanguage = languageMap[digits] || 'en-GB';
+      const selectedLanguage = languageMap[language] || 'en-GB';
       response.redirect({
         method: 'POST',
       }, `/api/call/process?language=${selectedLanguage}`);
     }
+
+    // Process the call data
+    const callData: CallData = {
+      tenantName: speechResult.split(', ')[0],
+      email: speechResult.split(', ')[1],
+      room: speechResult.split(', ')[2],
+      faultDescription: speechResult.split(', ')[3],
+      faultDate: speechResult.split(', ')[4],
+      urgency: speechResult.split(', ')[5],
+      createdAt: new Date().toISOString()
+    };
+
+    await processCallData(callData);
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },
     });
   } catch (error) {
     console.error('Error in voice route:', error);
-    // Redirect to fallback in case of error
-    const response = new VoiceResponse();
-    response.redirect({
-      method: 'POST',
-    }, '/api/call/fallback');
-    return new NextResponse(response.toString(), {
-      headers: { 'Content-Type': 'text/xml' },
-    });
+    return NextResponse.redirect(new URL('/api/call/fallback', request.url));
   }
 }
 

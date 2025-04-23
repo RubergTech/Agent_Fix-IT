@@ -6,7 +6,8 @@ export interface CallData {
   room: string;
   faultDescription: string;
   faultDate: string;
-  urgency: 'low' | 'medium' | 'high';
+  urgency: string;
+  createdAt: string;
   language: Language;
 }
 
